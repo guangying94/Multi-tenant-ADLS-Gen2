@@ -1,0 +1,70 @@
+<policies>
+    <inbound>
+        <set-variable name="ContainerName" value="@(context.Request.Headers.GetValueOrDefault("Container"))" />
+        <set-variable name="FilePath" value="@(context.Request.Headers.GetValueOrDefault("File"))" />
+        <validate-jwt header-name="Authorization"
+                      failed-validation-httpcode="401" 
+                      failed-validation-error-message="Unauthorized. Access token is missing or invalid.">
+            <openid-config url="https://login.microsoftonline.com/<Azure-AD-Tenant-ID>/v2.0/.well-known/openid-configuration" />
+            <audiences>
+                <audience>api://<app-registration-ID></audience>
+            </audiences>
+            <issuers>
+                <issuer>https://sts.windows.net/<Azure-AD-Tenant-ID>/</issuer>
+            </issuers>
+        </validate-jwt>
+        <set-variable name="User" value="@{
+            var authHeader = context.Request.Headers.GetValueOrDefault("Authorization", "");
+            return authHeader.AsJwt()?.Claims.GetValueOrDefault("oid","");
+        }" />
+        <send-request mode="new" response-variable-name="AccessStatus" timeout="20" ignore-error="true">
+            <set-url>@{
+            string userName = context.Variables.GetValueOrDefault<string>("User");
+            string containerName = context.Variables.GetValueOrDefault<string>("ContainerName");
+            return String.Format("https://<Azure-Functions-URL>/api/check/{0}?&folder={1}",userName, containerName);
+            }</set-url>
+            <set-method>GET</set-method>
+            <authentication-managed-identity resource="api://<Service-Principal-for-Azure-Functions-Authentication>" />
+        </send-request>
+        <choose>
+            <when condition="@((bool)((IResponse)context.Variables["AccessStatus"]).Body.As<JObject>()["canAccess"] == false)">
+                <!-- Return 401 Unauthorized with http-problem payload -->
+                <return-response>
+                    <set-status code="401" reason="Unauthorized" />
+                    <set-header name="WWW-Authenticate" exists-action="override">
+                        <value>Not Authorized to access this file</value>
+                    </set-header>
+                </return-response>
+            </when>
+        </choose>
+        <set-header name="Blob" exists-action="delete" />
+        <set-header name="Container" exists-action="delete" />
+        <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+        <set-header name="Sec-Fetch-Site" exists-action="delete" />
+        <set-header name="Sec-Fetch-Mode" exists-action="delete" />
+        <set-header name="Sec-Fetch-Dest" exists-action="delete" />
+        <set-header name="Accept" exists-action="delete" />
+        <set-header name="Accept-Encoding" exists-action="delete" />
+        <set-header name="Referer" exists-action="delete" />
+        <set-header name="X-Forwarded-For" exists-action="delete" />
+        <set-header name="x-ms-version" exists-action="override">
+            <value>@{string version = "2017-11-09"; return version;}</value>
+        </set-header>
+        <set-backend-service base-url="@{
+            string containerName = context.Variables.GetValueOrDefault<string>("ContainerName");
+            string filePath = context.Variables.GetValueOrDefault<string>("FilePath");
+            return String.Format("https://<ADLS-Storage-Url>.dfs.core.windows.net/{0}/{1}", containerName, filePath);
+            }" />
+        <authentication-managed-identity resource="https://storage.azure.com/" />
+        <base />
+    </inbound>
+    <backend>
+        <base />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>
