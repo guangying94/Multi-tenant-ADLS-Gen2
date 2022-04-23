@@ -21,7 +21,7 @@
             <set-url>@{
             string userName = context.Variables.GetValueOrDefault<string>("User");
             string containerName = context.Variables.GetValueOrDefault<string>("ContainerName");
-            return String.Format("https://<Azure-Functions-URL>/api/check/{0}?&folder={1}",userName, containerName);
+            return String.Format("https://<Azure-Functions-URL>/api/check/{0}?folder={1}",userName, containerName);
             }</set-url>
             <set-method>GET</set-method>
             <authentication-managed-identity resource="api://<Service-Principal-for-Azure-Functions-Authentication>" />
